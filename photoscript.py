@@ -61,31 +61,30 @@ def auto_canny(image, sigma=0.33):
 	lower = int(max(0, (1.0 - sigma) * v))
 	upper = int(min(255, (1.0 + sigma) * v))
 	edged = cv2.Canny(image, lower, upper)
-	dilated = cv2.dilate(edged, numpy.ones((4,4), dtype=numpy.uint8))
+	dilated = cv2.dilate(edged, numpy.ones((3,3), dtype=numpy.uint8))
 
-	return dilated
+	return edged
 
-def findAndShowRects(image, outputdir, filename):
+def findAndShowRects(image, outputdir, filename, type):
 	resizedsize = 1000
 	resized = imutils.resize(image, height = resizedsize) if image.shape[0] > image.shape[1] else imutils.resize(image, width = resizedsize)
 	ratio = image.shape[0] / float(resized.shape[0])
 
 	gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
-	blurred = cv2.GaussianBlur(gray, (11, 11), 0)
+	blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 	edges = auto_canny(blurred)
-
-	cv2.imshow("Image", edges)
-	key = cv2.waitKey(0)	
 
 	thresh_bin = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY)[1]
 	thresh_otsu = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)[1]
 	thresh_mean = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 701, 10)
 	thresh_gauss = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 701, 10)
+	thresh_edges = cv2.adaptiveThreshold(edges, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 701, 10)
 
 	opening_bin = cv2.morphologyEx(thresh_bin, cv2.MORPH_OPEN, numpy.ones((2,2),numpy.uint8))
 	opening_otsu = cv2.morphologyEx(thresh_otsu, cv2.MORPH_OPEN, numpy.ones((2,2),numpy.uint8))
 	opening_mean = cv2.morphologyEx(thresh_mean, cv2.MORPH_OPEN, numpy.ones((2,2),numpy.uint8))
 	opening_gauss = cv2.morphologyEx(thresh_gauss, cv2.MORPH_OPEN, numpy.ones((2,2),numpy.uint8))
+	opening_edges = cv2.morphologyEx(thresh_edges, cv2.MORPH_OPEN, numpy.ones((2,2),numpy.uint8))
 	
 	cnts_find_bin = cv2.findContours(opening_bin.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 	cnts_find_otsu = cv2.findContours(opening_otsu.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -93,7 +92,19 @@ def findAndShowRects(image, outputdir, filename):
 	cnts_find_gauss = cv2.findContours(opening_gauss.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 	cnts_find_edges = cv2.findContours(edges.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-	cnts = imutils.grab_contours(cnts_find_edges)
+	if type == 5:
+		cnts = imutils.grab_contours(cnts_find_edges)
+		cnts += imutils.grab_contours(cnts_find_otsu)
+		cnts += imutils.grab_contours(cnts_find_mean)
+		cnts += imutils.grab_contours(cnts_find_gauss)
+	elif type == 2:
+		cnts = imutils.grab_contours(cnts_find_edges)
+	elif type == 3:
+		cnts = imutils.grab_contours(cnts_find_otsu)
+	elif type == 4:
+		cnts = imutils.grab_contours(cnts_find_mean)
+	else:
+		cnts = imutils.grab_contours(cnts_find_gauss)
 
 	all_approx = []
 	all_c = []
@@ -118,9 +129,12 @@ def findAndShowRects(image, outputdir, filename):
 		if not checkRatio(resized, approx):
 			continue
 
-		if cv2.arcLength(approx, True) < (resized.shape[0] + resized.shape[1])/2:
+		if cv2.arcLength(approx, True) < (resized.shape[0] + resized.shape[1])/4:
 			continue
 
+		if cv2.arcLength(approx, True) > (resized.shape[0] + resized.shape[1]) * 2 * 0.6:
+			continue
+		
 		all_approx += [approx]
 		all_c += [c]
 
@@ -150,8 +164,8 @@ def findAndShowRects(image, outputdir, filename):
 # Limit number of files to the given value. Values less than or equal to 0 processes all files.
 def readFiles(limit):
 	counter = 0
-	rootdir = "/Users/akshat/Desktop/Input/Gopikunj/Album1"
-	outputdir = "/Users/akshat/Desktop/Output/Gopikunj/Album1"
+	rootdir = "/Users/akshat/Desktop/Input/Gopikunj/Album8"
+	outputdir = "/Users/akshat/Desktop/Output/Gopikunj/Album8"
 	unprocessed_files = []
 	for root, dirs, files in os.walk(rootdir):
 	    jpegs = filter(lambda x: x.endswith(".JPG") and "DONE" not in x, files)
@@ -160,7 +174,12 @@ def readFiles(limit):
 	    		return
 	    	image = cv2.imread(root+"/"+jpeg)
 	    	outputfolder = outputdir if (root == rootdir) else outputdir+"/"+root.replace(rootdir+"/", "")
-	    	success = findAndShowRects(image, outputfolder, jpeg[:-4])
+	    	t = 1
+	    	success = False
+	    	while t < 6 and not success:
+	    		success = findAndShowRects(image, outputfolder, jpeg[:-4], t)
+	    		t += 1
+
 	    	if success:
 	    		os.rename(root+"/"+jpeg, root+"/DONE_"+jpeg)
 	    	else:
